@@ -1,0 +1,23 @@
+{
+  "name": "autodock",
+  "version": "1.0.0",
+  "description": "An api interface for autodock vina",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moltimate/autodock-docker.git"
+  },
+  "author": "Tyler Reimold",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/moltimate/autodock-docker/issues"
+  },
+  "homepage": "https://github.com/moltimate/autodock-docker#readme",
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
