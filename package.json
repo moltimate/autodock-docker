@@ -18,6 +18,8 @@
   },
   "homepage": "https://github.com/moltimate/autodock-docker#readme",
   "dependencies": {
-    "express": "^4.17.1"
+    "express": "^4.17.1",
+    "formidable": "^1.2.1",
+    "googleapis": "^45.0.0"
   }
 }
