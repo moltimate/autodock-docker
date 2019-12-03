@@ -41,7 +41,13 @@ app.post('/v1/autodock', (req, res) => {
         try {
             argsString = 
             ' --receptor ' +  __dirname + '/uploads/' + macromolecule.name + '.pdbqt' +  
-            ' --ligend ' + __dirname + '/uploads/' + ligend.originalName + '.pdbqt'
+            ' --ligand ' + __dirname + '/uploads/' + ligend.name + '.pdbqt' +
+            ' --center_x ' + fields['center_x'] +
+            ' --center_y ' + fields['center_y'] +
+            ' --center_z ' + fields['center_z'] +
+            ' --size_x ' + fields['size_x'] +
+            ' --size_y ' + fields['size_y'] +
+            ' --size_z ' + fields['size_z'] 
         }
         catch(err) {
             res.status(400)
