@@ -3,15 +3,28 @@ const crypto = require('crypto');
 var exec = require('child_process').execFile;
 const app = express();
 var formidable = require('formidable');
+var fs = require('fs');
 app.use(express.json())
+
 app.get('/v1/autodock', (req, res) => {
     res.send('Hello World!')
 });
 
 app.post('/v1/autodock', (req, res) => {
-    ligend = {}
-    macromolecule = {}
+    ligend = null
+    macromolecule = null
     fields = {}
+    let uploadDirectory = __dirname + '/uploads/' + crypto.createHmac('sha1', crypto.randomBytes(48))
+        .update(Date.now()
+        .toString())
+        .digest('hex');
+    if (!fs.existsSync(uploadDirectory)) {
+        fs.mkdirSync(uploadDirectory);
+    }
+    else {
+        res.status(400);
+        res.send('Hash collision.');
+    }
     var form = new formidable.IncomingForm();
     form.multiples = true;
     form.parse(req);
@@ -19,29 +32,30 @@ app.post('/v1/autodock', (req, res) => {
         fields[name] = value
     })
     form.on('fileBegin', function (name, file){
-        let nameHash = crypto.createHmac('sha1', crypto.randomBytes(48))
-        .update(Date.now()
-        .toString())
-        .digest('hex')
+        if (fs.existsSync(uploadDirectory + name + '.pdbqt')) {
+            res.status(400);
+            res.send('Multiple files with same name uploaded?');
+        }
         if (name == 'ligend') {
-            ligend.originalName = name
-            ligend.name = nameHash
+            ligend = file.name
         }
         else if (name == 'macromolecule') {
-            macromolecule.originalName = name
-            macromolecule.name = nameHash
+            macromolecule = file.name
         }
         else {
             res.status(400);
             res.send('Unknown file name parameter: ' + name);
         }
-        file.path = __dirname + '/uploads/' + nameHash + '.pdbqt';
+        file.path = uploadDirectory + '/' + file.name;
     });
     form.on('end', function() {
         try {
+            var args = []
+            var options = []
+            args.push()
             argsString = 
-            ' --receptor ' +  __dirname + '/uploads/' + macromolecule.name + '.pdbqt' +  
-            ' --ligand ' + __dirname + '/uploads/' + ligend.name + '.pdbqt' +
+            ' --receptor ' +  uploadDirectory + '/' + macromolecule +  
+            ' --ligand ' +  uploadDirectory + '/' + ligend +
             ' --center_x ' + fields['center_x'] +
             ' --center_y ' + fields['center_y'] +
             ' --center_z ' + fields['center_z'] +
@@ -54,7 +68,7 @@ app.post('/v1/autodock', (req, res) => {
             res.send('Incorrect arguments provided.')
         }
         try {
-            exec(`${__dirname}/vina ` + argsString, function(error, stdout, stderr) {
+            exec(`${__dirname}/vina ` + argsString, [], {shell: true}, function(error, stdout, stderr) {
                 console.log(stdout)
                 console.log(stderr)
                 console.log(error)
