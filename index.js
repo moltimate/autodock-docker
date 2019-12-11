@@ -4,26 +4,65 @@ var exec = require('child_process').execFile;
 const app = express();
 var formidable = require('formidable');
 var fs = require('fs');
+var archiver = require('archiver')
 app.use(express.json())
 
 app.get('/v1/autodock', (req, res) => {
-    res.send('Hello World!')
+    if (!req.query.jobId) {
+        res.status(400);
+        return res.send('Missing required parameter: jobId');
+    }
+    uploadDirectory = __dirname + '/uploads/' + req.query.jobId;
+    if (!fs.existsSync(uploadDirectory)) {
+        res.status(400);
+        return res.send('No job with that ID.');
+    }
+    if (!fs.existsSync(uploadDirectory + '/ligend_out.pdbqt')) {
+        res.status(200);
+        return res.send('Job still processing.');
+    }
+    var outputPath = uploadDirectory + '/output.zip';
+    var output = fs.createWriteStream(outputPath);
+    var archive = archiver('zip', {
+        zlib: { level: 9 }
+    })
+    output.on('close', function () {
+        var stat = fs.statSync(outputPath);
+        res.writeHead(200, {
+            'Content-Type': 'application/zip',
+            'Content-Length': stat.size
+        });
+        var readStream = fs.createReadStream(outputPath);
+        readStream.pipe(res)
+    })
+    archive.on('error', function (err) {
+        res.status(400);
+        return res.send('File archiving error.');
+    })
+    archive.pipe(output)
+    results = uploadDirectory + '/ligend_out.pdbqt'
+    archive.append(fs.createReadStream(results), { name: 'ligend_out.pdbqt' })
+    log = uploadDirectory + '/log.txt'
+    archive.append(fs.createReadStream(log), { name: 'log.txt' })
+    archive.finalize();
+
 });
 
 app.post('/v1/autodock', (req, res) => {
     ligend = null
     macromolecule = null
     fields = {}
-    let uploadDirectory = __dirname + '/uploads/' + crypto.createHmac('sha1', crypto.randomBytes(48))
-        .update(Date.now()
-        .toString())
-        .digest('hex');
+    jobId = crypto.createHmac('SHA256', crypto.randomBytes(48))
+    .update(Date.now()
+    .toString())
+    .digest('hex');
+    uploadDirectory = __dirname + '/uploads/' + jobId;
     if (!fs.existsSync(uploadDirectory)) {
         fs.mkdirSync(uploadDirectory);
     }
     else {
         res.status(400);
-        res.send('Hash collision.');
+        return res.send('Hash collision.');
     }
     var form = new formidable.IncomingForm();
     form.multiples = true;
@@ -34,19 +73,21 @@ app.post('/v1/autodock', (req, res) => {
     form.on('fileBegin', function (name, file){
         if (fs.existsSync(uploadDirectory + name + '.pdbqt')) {
             res.status(400);
-            res.send('Multiple files with same name uploaded?');
+            return res.send('Multiple files with same name uploaded?');
         }
         if (name == 'ligend') {
-            ligend = file.name
+            ligend = file.name        
+            file.path = uploadDirectory + '/' + 'ligend.pdbqt';
         }
         else if (name == 'macromolecule') {
             macromolecule = file.name
+            file.path = uploadDirectory + '/' + 'macromolecule.pdbqt';
         }
         else {
             res.status(400);
-            res.send('Unknown file name parameter: ' + name);
+            return res.send('Unknown file name parameter: ' + name);
         }
-        file.path = uploadDirectory + '/' + file.name;
+
     });
     form.on('end', function() {
         try {
@@ -54,29 +95,39 @@ app.post('/v1/autodock', (req, res) => {
             var options = []
             args.push()
             argsString = 
-            ' --receptor ' +  uploadDirectory + '/' + macromolecule +  
-            ' --ligand ' +  uploadDirectory + '/' + ligend +
+            ' --receptor ' +  uploadDirectory + '/macromolecule.pdbqt' +  
+            ' --ligand ' +  uploadDirectory + '/ligend.pdbqt' +
             ' --center_x ' + fields['center_x'] +
             ' --center_y ' + fields['center_y'] +
             ' --center_z ' + fields['center_z'] +
             ' --size_x ' + fields['size_x'] +
             ' --size_y ' + fields['size_y'] +
-            ' --size_z ' + fields['size_z'] 
+            ' --size_z ' + fields['size_z'] +
+            ' --log ' + uploadDirectory + '/log.txt' 
         }
         catch(err) {
             res.status(400)
-            res.send('Incorrect arguments provided.')
+            return res.send('Incorrect arguments provided.')
         }
         try {
             exec(`${__dirname}/vina ` + argsString, [], {shell: true}, function(error, stdout, stderr) {
-                console.log(stdout)
-                console.log(stderr)
-                console.log(error)
+                if (stderr) {
+                    res.status(400)
+                    res.send('Execution error.')
+                    //todo remove job directory
+                }
             });
+            response = {
+                'jobId': jobId,
+                'macromolecule': macromolecule,
+                'ligend': ligend
+            }
+            res.status(200);
+            return res.send(response);
         }
         catch(error) {
             res.status(400)
-            res.send('Execution error: ' + error)
+            return res.send('Execution error: ' + error)
         }
     });
 
