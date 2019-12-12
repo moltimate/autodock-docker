@@ -19,6 +19,9 @@ RUN npm install
 # Copy the rest of the files and autodock binary
 COPY . .
 
+# Add execute permissions to autodock binary
+RUN /bin/bash -c 'chmod +x vina' 
+
 # Expose port 8000 for API
 EXPOSE 8000
 
