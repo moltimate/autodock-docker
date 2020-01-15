@@ -12,6 +12,9 @@ app.get('/v1/autodock', (req, res) => {
         res.status(400);
         return res.send('Missing required parameter: jobId');
     }
+    if (!fs.existsSync(__dirname + '/uploads/')) {
+        fs.mkdirSync(__dirname + '/uploads/');
+    }
     uploadDirectory = __dirname + '/uploads/' + req.query.jobId;
     if (!fs.existsSync(uploadDirectory)) {
         res.status(400);
@@ -56,6 +59,9 @@ app.post('/v1/autodock', (req, res) => {
     .update(Date.now()
     .toString())
     .digest('hex');
+    if (!fs.existsSync(__dirname + '/uploads/')) {
+        fs.mkdirSync(__dirname + '/uploads/');
+    }
     uploadDirectory = __dirname + '/uploads/' + jobId;
     if (!fs.existsSync(uploadDirectory)) {
         fs.mkdirSync(uploadDirectory);
