@@ -97,30 +97,26 @@ app.post('/v1/autodock', (req, res) => {
     });
     form.on('end', function() {
         try {
-            var args = []
-            var options = []
-            args.push()
-            argsString = 
-            ' --receptor ' +  uploadDirectory + '/macromolecule.pdbqt' +  
-            ' --ligand ' +  uploadDirectory + '/ligend.pdbqt' +
-            ' --center_x ' + fields['center_x'] +
-            ' --center_y ' + fields['center_y'] +
-            ' --center_z ' + fields['center_z'] +
-            ' --size_x ' + fields['size_x'] +
-            ' --size_y ' + fields['size_y'] +
-            ' --size_z ' + fields['size_z'] +
-            ' --log ' + uploadDirectory + '/log.txt' 
+            args = 
+            ['--receptor ', uploadDirectory + '/macromolecule.pdbqt',  
+            '--ligand ', uploadDirectory + '/ligend.pdbqt',
+            '--center_x', fields['center_x'],
+            '--center_y', fields['center_y'],
+            '--center_z', fields['center_z'],
+            '--size_x', fields['size_x'],
+            '--size_y', fields['size_y'],
+            '--size_z', fields['size_z'],
+            '--log', uploadDirectory + '/log.txt']
         }
         catch(err) {
             res.status(400)
             return res.send('Incorrect arguments provided.')
         }
         try {
-            exec(`${__dirname}/vina ` + argsString, [], {shell: true}, function(error, stdout, stderr) {
+            exec(`${__dirname}/vina `, args, {shell: true}, function(error, stdout, stderr) {
                 if (stderr) {
-                    res.status(400)
-                    res.send('Execution error.')
-                    //todo remove job directory
+                    console.log(stderr);
+                    // Make this create error.txt
                 }
             });
             response = {
