@@ -20,7 +20,7 @@ app.get('/v1/autodock', (req, res) => {
         res.status(400);
         return res.send('No job with that ID.');
     }
-    if (!fs.existsSync(uploadDirectory + '/ligend_out.pdbqt')) {
+    if (!fs.existsSync(uploadDirectory + '/ligand_out.pdbqt')) {
         res.status(200);
         return res.send('Job still processing.');
     }
@@ -43,8 +43,8 @@ app.get('/v1/autodock', (req, res) => {
         return res.send('File archiving error.');
     })
     archive.pipe(output)
-    results = uploadDirectory + '/ligend_out.pdbqt'
-    archive.append(fs.createReadStream(results), { name: 'ligend_out.pdbqt' })
+    results = uploadDirectory + '/ligand_out.pdbqt'
+    archive.append(fs.createReadStream(results), { name: 'ligand_out.pdbqt' })
     log = uploadDirectory + '/log.txt'
     archive.append(fs.createReadStream(log), { name: 'log.txt' })
     archive.finalize();
@@ -52,9 +52,10 @@ app.get('/v1/autodock', (req, res) => {
 });
 
 app.post('/v1/autodock', (req, res) => {
-    ligend = null
-    macromolecule = null
-    fields = {}
+    ligand = null;
+    macromolecule = null;
+    fields = {};
+    errorMsg = "";
     jobId = crypto.createHmac('SHA256', crypto.randomBytes(48))
     .update(Date.now()
     .toString())
@@ -68,7 +69,7 @@ app.post('/v1/autodock', (req, res) => {
     }
     else {
         res.status(400);
-        return res.send('Hash collision.');
+        errorMsg = 'Hash collision.';
     }
     var form = new formidable.IncomingForm();
     form.multiples = true;
@@ -79,11 +80,11 @@ app.post('/v1/autodock', (req, res) => {
     form.on('fileBegin', function (name, file){
         if (fs.existsSync(uploadDirectory + name + '.pdbqt')) {
             res.status(400);
-            return res.send('Multiple files with same name uploaded?');
+            errorMsg = 'Multiple files with same name uploaded?';
         }
-        if (name == 'ligend') {
-            ligend = file.name        
-            file.path = uploadDirectory + '/' + 'ligend.pdbqt';
+        if (name == 'ligand') {
+            ligand = file.name        
+            file.path = uploadDirectory + '/' + 'ligand.pdbqt';
         }
         else if (name == 'macromolecule') {
             macromolecule = file.name
@@ -91,15 +92,18 @@ app.post('/v1/autodock', (req, res) => {
         }
         else {
             res.status(400);
-            return res.send('Unknown file name parameter: ' + name);
+            errorMsg = 'Unknown file name parameter: ' + name;
         }
 
     });
     form.on('end', function() {
+        if (errorMsg) {
+            res.send(errorMsg);
+        }
         try {
             args = 
             ['--receptor ', uploadDirectory + '/macromolecule.pdbqt',  
-            '--ligand ', uploadDirectory + '/ligend.pdbqt',
+            '--ligand ', uploadDirectory + '/ligand.pdbqt',
             '--center_x', fields['center_x'],
             '--center_y', fields['center_y'],
             '--center_z', fields['center_z'],
@@ -110,7 +114,7 @@ app.post('/v1/autodock', (req, res) => {
         }
         catch(err) {
             res.status(400)
-            return res.send('Incorrect arguments provided.')
+            errorMsg = 'Incorrect arguments provided.';
         }
         try {
             exec(`${__dirname}/vina `, args, {shell: true}, function(error, stdout, stderr) {
@@ -122,14 +126,14 @@ app.post('/v1/autodock', (req, res) => {
             response = {
                 'jobId': jobId,
                 'macromolecule': macromolecule,
-                'ligend': ligend
+                'ligand': ligand
             }
             res.status(200);
-            return res.send(response);
+            res.send(response);
         }
         catch(error) {
             res.status(400)
-            return res.send('Execution error: ' + error)
+            errorMsg = 'Execution error: ' + error;
         }
     });
 

@@ -1,7 +1,7 @@
 FROM ubuntu:18.04
 
 # Update Ubuntu Software Repo and install curl
-RUN apt-get update && apt-get install curl --yes
+RUN apt-get update && apt-get install curl wget --yes
 
 # Install node + npm
 RUN curl -sL https://deb.nodesource.com/setup_12.x | bash - && \
@@ -9,6 +9,8 @@ RUN curl -sL https://deb.nodesource.com/setup_12.x | bash - && \
 
 # Create autodock vina directory
 WORKDIR /opt/autodock
+
+RUN wget -c http://vina.scripps.edu/download/autodock_vina_1_1_2_linux_x86.tgz -O - | tar -xz
 
 # Copy package.json into work directory
 COPY package.json .
