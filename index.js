@@ -7,6 +7,9 @@ var fs = require('fs');
 var archiver = require('archiver')
 app.use(express.json())
 
+const REQUIRED_FIELDS = ["center_x","center_y","center_z","size_x","size_y","size_z"];
+const OPTIONAL_FIELDS = ["cpu", "seed", "exhaustiveness", "num_modes", "energy_range"];
+
 app.get('/v1/autodock', (req, res) => {
     if (!req.query.jobId) {
         res.status(400);
@@ -68,8 +71,9 @@ app.post('/v1/autodock', (req, res) => {
         fs.mkdirSync(uploadDirectory);
     }
     else {
-        res.status(400);
         errorMsg = 'Hash collision.';
+        res.status(400)
+        return res.send(errorMsg)
     }
     var form = new formidable.IncomingForm();
     form.multiples = true;
@@ -79,8 +83,9 @@ app.post('/v1/autodock', (req, res) => {
     })
     form.on('fileBegin', function (name, file){
         if (fs.existsSync(uploadDirectory + name + '.pdbqt')) {
-            res.status(400);
             errorMsg = 'Multiple files with same name uploaded?';
+            res.status(400)
+            return res.send(errorMsg)
         }
         if (name == 'ligand') {
             ligand = file.name        
@@ -91,30 +96,40 @@ app.post('/v1/autodock', (req, res) => {
             file.path = uploadDirectory + '/' + 'macromolecule.pdbqt';
         }
         else {
-            res.status(400);
             errorMsg = 'Unknown file name parameter: ' + name;
+            res.status(400)
+            return res.send(errorMsg)
         }
 
     });
     form.on('end', function() {
-        if (errorMsg) {
-            res.send(errorMsg);
-        }
         try {
             args = 
             ['--receptor ', uploadDirectory + '/macromolecule.pdbqt',  
             '--ligand ', uploadDirectory + '/ligand.pdbqt',
-            '--center_x', fields['center_x'],
-            '--center_y', fields['center_y'],
-            '--center_z', fields['center_z'],
-            '--size_x', fields['size_x'],
-            '--size_y', fields['size_y'],
-            '--size_z', fields['size_z'],
-            '--log', uploadDirectory + '/log.txt']
+            '--log', uploadDirectory + '/log.txt'];
+            
+            // Make sure there are no required arguments missing
+            let missingParameters = REQUIRED_FIELDS.filter(field => !(field in fields));
+            if (missingParameters.length>0) {
+                throw `Missing required parameters: ${missingParameters.join()}`;
+            }
+
+            // Make sure that any extra parameters are valid optional arguments, for testing or validation
+            let unknownParameters = Object.keys(fields).filter(field => !([...REQUIRED_FIELDS, ...OPTIONAL_FIELDS].includes(field)));
+            if (unknownParameters.length>0) {
+                throw `Unknown parameters: ${unknownParameters.join()}`;
+            }
+
+            // Add parameters to arguments list
+            Object.keys(fields).forEach(field => {
+                args.push("--"+field, fields[field])
+            });
         }
         catch(err) {
+            errorMsg = `Incorrect arguments provided: ${err}`;
             res.status(400)
-            errorMsg = 'Incorrect arguments provided.';
+            return res.send(errorMsg)
         }
         try {
             exec(`${__dirname}/vina `, args, {shell: true}, function(error, stdout, stderr) {
@@ -132,8 +147,9 @@ app.post('/v1/autodock', (req, res) => {
             res.send(response);
         }
         catch(error) {
-            res.status(400)
             errorMsg = 'Execution error: ' + error;
+            res.status(500)
+            return res.send(errorMsg)
         }
     });
 
