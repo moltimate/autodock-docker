@@ -72,7 +72,7 @@ app.post('/v1/autodock', (req, res) => {
     }
     else {
         errorMsg = 'Hash collision.';
-        res.status(400)
+        res.status(500)
         return res.send(errorMsg)
     }
     var form = new formidable.IncomingForm();
@@ -84,8 +84,6 @@ app.post('/v1/autodock', (req, res) => {
     form.on('fileBegin', function (name, file){
         if (fs.existsSync(uploadDirectory + name + '.pdbqt')) {
             errorMsg = 'Multiple files with same name uploaded?';
-            res.status(400)
-            return res.send(errorMsg)
         }
         if (name == 'ligand') {
             ligand = file.name        
@@ -97,11 +95,15 @@ app.post('/v1/autodock', (req, res) => {
         }
         else {
             errorMsg = 'Unknown file name parameter: ' + name;
-            res.status(400)
-            return res.send(errorMsg)
         }
 
     });
+
+    if (errorMsg) {
+        res.status(400);
+        return res.send(errorMsg);
+    }
+
     form.on('end', function() {
         try {
             args = 
