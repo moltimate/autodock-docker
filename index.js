@@ -1,11 +1,18 @@
 const express = require('express');
 const crypto = require('crypto');
+const {Storage} = require('@google-cloud/storage');
 var exec = require('child_process').execFile;
 const app = express();
 var formidable = require('formidable');
 var fs = require('fs');
 var archiver = require('archiver')
 app.use(express.json())
+
+
+app.delete('/v1/autodock', (req, res) => {
+    res.status('200');
+    res.send('Deleted.');
+})
 
 app.get('/v1/autodock', (req, res) => {
     if (!req.query.jobId) {
@@ -52,6 +59,7 @@ app.get('/v1/autodock', (req, res) => {
 });
 
 app.post('/v1/autodock', (req, res) => {
+    const storage = new Storage();
     ligand = null;
     macromolecule = null;
     fields = {};
@@ -122,6 +130,16 @@ app.post('/v1/autodock', (req, res) => {
                     console.log(stderr);
                     // Make this create error.txt
                 }
+                const options = {
+                    gzip: 'true'
+                };
+                jobUploadCallback = function (err) {
+                    // Put error.txt into cloud bucket
+                    console.log(err);
+                };
+                storage
+                    .bucket('autodock-production')
+                    .upload(uploadDirectory + '/ligand_out.pdbqt', options, jobUploadCallback);
             });
             response = {
                 'jobId': jobId,
