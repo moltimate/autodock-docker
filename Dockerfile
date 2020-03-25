@@ -10,6 +10,9 @@ RUN curl -sL https://deb.nodesource.com/setup_12.x | bash - && \
 # Create autodock vina directory
 WORKDIR /opt/autodock
 
+# Create required uploads directory
+RUN mkdir uploads
+
 # Download autodock binary
 RUN wget -c http://vina.scripps.edu/download/autodock_vina_1_1_2_linux_x86.tgz -O - | tar -xz
 
