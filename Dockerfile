@@ -34,4 +34,7 @@ RUN /bin/bash -c 'chmod +x vina'
 # Expose port 8000 for API
 EXPOSE 8000
 
-CMD ["npm", "start"]
+# CMD ["npm", "start"]
+
+# For debugging
+CMD ["npm", "run", "debug"]

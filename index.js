@@ -6,6 +6,7 @@ const app = express();
 var formidable = require('formidable');
 var fs = require('fs-extra');
 var archiver = require('archiver')
+var path = require('path');
 app.use(express.json())
 
 const REQUIRED_FIELDS = ["center_x","center_y","center_z","size_x","size_y","size_z"];
@@ -78,35 +79,36 @@ app.post('/v1/autodock', (req, res) => {
     form.on('field', function(name, value) {
         fields[name] = value
     })
-    form.on('fileBegin', function (name, file){
-        if (fs.existsSync(uploadDirectory + name + '.pdbqt')) {
+    form.on('fileBegin', function (uploadDirectoryClosure) {return function (name, file){
+        if (fs.existsSync(uploadDirectoryClosure + name + '.pdbqt')) {
             errorMsg = 'Multiple files with same name uploaded?';
         }
         if (name == 'ligand') {
             ligand = file.name        
-            file.path = uploadDirectory + '/' + 'ligand.pdbqt';
+            file.path = uploadDirectoryClosure + '/' + 'ligand.pdbqt';
         }
         else if (name == 'macromolecule') {
             macromolecule = file.name
-            file.path = uploadDirectory + '/' + 'macromolecule.pdbqt';
+            file.path = uploadDirectoryClosure + '/' + 'macromolecule.pdbqt';
         }
         else {
             errorMsg = 'Unknown file name parameter: ' + name;
         }
 
-    });
+    }}(uploadDirectory));
 
     if (errorMsg) {
         res.status(400);
         return res.send(errorMsg);
     }
 
-    form.on('end', function() {
+    form.on('end', function (uploadDirectoryClosure, jobIdClosure) {
+        return function() {
         try {
             args = 
-            ['--receptor ', uploadDirectory + '/macromolecule.pdbqt',  
-            '--ligand ', uploadDirectory + '/ligand.pdbqt',
-            '--log', uploadDirectory + '/log.txt'];
+            ['--receptor', uploadDirectoryClosure + '/macromolecule.pdbqt',  
+            '--ligand', uploadDirectoryClosure + '/ligand.pdbqt',
+            '--log', uploadDirectoryClosure + '/log.txt'];
             
             // Make sure there are no required arguments missing
             let missingParameters = REQUIRED_FIELDS.filter(field => !(field in fields));
@@ -131,34 +133,38 @@ app.post('/v1/autodock', (req, res) => {
             return res.send(errorMsg)
         }
         try {
-            exec(`${__dirname}/vina `, args, {shell: true}, function(error, stdout, stderr) {
+            exePath = path.resolve(__dirname, './vina')
+            exec(exePath, args, null, function(error, stdout, stderr) {
                 jobUploadCallback = function (err) {
                     if (err) {
-                        fs.writeFile(uploadDirectory + '/error.txt', err, (fsErr) => {
+                        fs.writeFile(uploadDirectoryClosure + '/error.txt', err, (fsErr) => {
                             if (fsErr) {
                                 // Should throw here but we don't have a restarter...
                             }
                             const options = {
                                 gzip: 'true',
-                                destination: jobId + '/error.txt'
+                                destination: jobIdClosure + '/error.txt'
                             };
                             storage
                                 .bucket('autodock-production')
-                                .upload(uploadDirectory + '/error.txt', options, ()=> {
-                                    fs.remove(uploadDirectory);
+                                .upload(uploadDirectoryClosure + '/error.txt', options, ()=> {
+                                    fs.remove(uploadDirectoryClosure);
                                 });
                             console.log(err);
                         })
                     }
                     else {
-                        fs.remove(uploadDirectory);
+                        fs.remove(uploadDirectoryClosure);
                     }
                 };
                 if (stderr) {
                     jobUploadCallback(stderr);
                 }
+                else if (error) {
+                    jobUploadCallback(error.toString());
+                }
                 else {
-                    var outputPath = uploadDirectory + '/output.zip';
+                    var outputPath = uploadDirectoryClosure + '/output.zip';
                     var output = fs.createWriteStream(outputPath);
                     var archive = archiver('zip', {
                         zlib: { level: 9 }
@@ -166,35 +172,34 @@ app.post('/v1/autodock', (req, res) => {
                     output.on('close', function () {
                         const options = {
                             gzip: 'true',
-                            destination: jobId + '/output.zip'
+                            destination: jobIdClosure + '/output.zip'
                         };
                         storage
                             .bucket('autodock-production')
-                            .upload(uploadDirectory + '/output.zip', options, jobUploadCallback);
+                            .upload(uploadDirectoryClosure + '/output.zip', options, jobUploadCallback);
                     })
-                    archive.on('error', jobUploadCallback)
-                    archive.pipe(output)
-                    results = uploadDirectory + '/ligand_out.pdbqt'
-                    archive.append(fs.createReadStream(results), { name: 'ligand_out.pdbqt' })
-                    log = uploadDirectory + '/log.txt'
-                    archive.append(fs.createReadStream(log), { name: 'log.txt' })
+                    archive.on('error', jobUploadCallback);
+                    archive.pipe(output);
+                    results = uploadDirectoryClosure + '/ligand_out.pdbqt';
+                    archive.append(fs.createReadStream(results), { name: 'ligand_out.pdbqt' });
+                    log = uploadDirectoryClosure + '/log.txt';
+                    archive.append(fs.createReadStream(log), { name: 'log.txt' });
                     archive.finalize();
+                }});
+                response = {
+                    'jobId': jobId,
+                    'macromolecule': macromolecule,
+                    'ligand': ligand
                 }
-            });
-            response = {
-                'jobId': jobId,
-                'macromolecule': macromolecule,
-                'ligand': ligand
+                res.status(200);
+                res.send(response);
             }
-            res.status(200);
-            res.send(response);
+            catch(error) {
+                errorMsg = 'Execution error: ' + error;
+                res.status(500)
+                return res.send(errorMsg)
         }
-        catch(error) {
-            errorMsg = 'Execution error: ' + error;
-            res.status(500)
-            return res.send(errorMsg)
-        }
-    });
+    }}(uploadDirectory, jobId));
 
 });
 
