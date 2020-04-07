@@ -12,46 +12,50 @@ app.use(express.json())
 const REQUIRED_FIELDS = ["center_x","center_y","center_z","size_x","size_y","size_z"];
 const OPTIONAL_FIELDS = ["cpu", "seed", "exhaustiveness", "num_modes", "energy_range"];
 
-app.delete('/v1/autodock', (req, res) => {
-    res.status('200');
-    res.send('Deleted.');
-})
-
 app.get('/v1/autodock', (req, res) => {
+    const storage = new Storage();
     if (!req.query.jobId) {
         res.status(400);
         return res.send('Missing required parameter: jobId');
     }
-    if (!fs.existsSync(uploadDirectory + '/ligand_out.pdbqt')) {
-        res.status(200);
-        return res.send('Job still processing.');
-    }
-    const options = {
-        gzip: 'true',
-        destination: jobId + '/error.txt'
-    };
-    storage
+    return storage
         .bucket('autodock-production')
-        .download(uploadDirectory + '/error.txt', options, ()=> {
-            fs.remove(uploadDirectory);
-    });
-    temp = crypto.createHmac('SHA256', crypto.randomBytes(48))
-    .update(Date.now()
-    .toString())
-    .digest('hex');
-    uploadDirectory = __dirname + '/uploads/' + temp;
-    if (!fs.existsSync(uploadDirectory)) {
-        fs.mkdirSync(uploadDirectory);
-    }
-    var outputPath = uploadDirectory + '/output.zip';
-    var stat = fs.statSync(outputPath);
-    res.writeHead(200, {
-        'Content-Type': 'application/zip',
-        'Content-Length': stat.size
-    });
-    var readStream = fs.createReadStream(outputPath);
-    readStream.pipe(res)
-
+        .file(req.query.jobId + '/output.zip')
+        .exists((err, exists) => {
+            if (err) {
+                res.status(400);
+                return res.send('Error retrieving file from storage.');
+            }
+            else if (exists) {
+                return storage
+                    .bucket('autodock-production')
+                    .file(req.query.jobId + '/output.zip')
+                    .createReadStream()
+                    .pipe(res);
+            }
+            else {
+                storage
+                .bucket('autodock-production')
+                .file(req.query.jobId + '/error.txt')
+                .exists((err, exists) => {
+                    if (err) {
+                        res.status(400);
+                        return res.send('Error retrieving file from storage.');
+                    }
+                    else if (exists) {
+                        return storage
+                            .bucket('autodock-production')
+                            .file(req.query.jobId + '/error.txt')
+                            .createReadStream()
+                            .pipe(res);
+                    }
+                    else {
+                        res.status(200);
+                        return res.send('Job still processing.');
+                    }
+                })
+            }
+        })
 });
 
 app.post('/v1/autodock', (req, res) => {
