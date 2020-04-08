@@ -60,15 +60,15 @@ app.get('/v1/autodock', (req, res) => {
 
 app.post('/v1/autodock', (req, res) => {
     const storage = new Storage();
-    ligand = null;
-    macromolecule = null;
-    fields = {};
-    errorMsg = "";
-    jobId = crypto.createHmac('SHA256', crypto.randomBytes(48))
+    var ligand = null;
+    var macromolecule = null;
+    var fields = {};
+    var errorMsg = "";
+    var jobId = crypto.createHmac('SHA256', crypto.randomBytes(48))
     .update(Date.now()
     .toString())
     .digest('hex');
-    uploadDirectory = __dirname + '/uploads/' + jobId;
+    var uploadDirectory = __dirname + '/uploads/' + jobId;
     if (!fs.existsSync(uploadDirectory)) {
         fs.mkdirSync(uploadDirectory);
     }
@@ -184,13 +184,13 @@ app.post('/v1/autodock', (req, res) => {
                     })
                     archive.on('error', jobUploadCallback);
                     archive.pipe(output);
-                    results = uploadDirectoryClosure + '/ligand_out.pdbqt';
+                    var results = uploadDirectoryClosure + '/ligand_out.pdbqt';
                     archive.append(fs.createReadStream(results), { name: 'ligand_out.pdbqt' });
-                    log = uploadDirectoryClosure + '/log.txt';
+                    var log = uploadDirectoryClosure + '/log.txt';
                     archive.append(fs.createReadStream(log), { name: 'log.txt' });
                     archive.finalize();
                 }});
-                response = {
+                var response = {
                     'jobId': jobId,
                     'macromolecule': macromolecule,
                     'ligand': ligand
