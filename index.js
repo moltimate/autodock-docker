@@ -138,7 +138,7 @@ app.post('/v1/autodock', (req, res) => {
         }
         try {
             exePath = path.resolve(__dirname, './vina')
-            exec(exePath, args, null, function(error, stdout, stderr) {
+            exec(exePath, args, {timeout: 900000}, function(error, stdout, stderr) {
                 jobUploadCallback = function (err) {
                     if (err) {
                         fs.writeFile(uploadDirectoryClosure + '/error.txt', err, (fsErr) => {
