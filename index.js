@@ -193,7 +193,7 @@ app.post('/v1/autodock', (req, res) => {
                             
                             console.log(err);
                         }).on('close', function() {
-                            var uploadParams = {Bucket:bucket, Key: uploadDirectoryClosure + '/error.txt', Body: }
+                            var uploadParams = {Bucket:bucket, Key: uploadDirectoryClosure + '/error.txt', Body: 'Error Running Autodock'}
                             s3.upload (uploadParams, function (err, data) {
                                 if (err) {
                                 console.log("Error", err);
