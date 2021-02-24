@@ -1,65 +1,107 @@
 const express = require('express');
 const crypto = require('crypto');
-const {Storage} = require('@google-cloud/storage');
+
 var exec = require('child_process').execFile;
 const app = express();
 var formidable = require('formidable');
 var fs = require('fs-extra');
 var archiver = require('archiver')
 var path = require('path');
+
+
+var AWS = require('aws-sdk');
+AWS.config.loadFromPath('./config.json');
+var s3 = new AWS.S3({apiVersion: '2006-03-01'});
+const bucket = 'autodock';
+
 app.use(express.json())
 
 const REQUIRED_FIELDS = ["center_x","center_y","center_z","size_x","size_y","size_z"];
 const OPTIONAL_FIELDS = ["cpu", "seed", "exhaustiveness", "num_modes", "energy_range"];
 
+function findKey(key) {
+    var params = {
+        Bucket: bucket, 
+        MaxKeys: 10
+       };
+    s3.listObjectsV2(params, function(err, data) {
+        if (err) return false; // an error occurred how to return an error?
+        else {
+           console.log(data);
+           //aws doesn't do file/folder structure it's just a list of things in the bucket
+           data['Contents'].map(obj => { if(obj.Key == key) return true;
+          });
+          return false
+         }
+      });
+
+}
+
 app.get('/v1/autodock', (req, res) => {
-    const storage = new Storage();
+
     if (!req.query.jobId) {
         res.status(400);
         return res.send('Missing required parameter: jobId');
     }
-    return storage
-        .bucket('autodock-production')
-        .file(req.query.jobId + '/output.zip')
-        .exists((err, exists) => {
-            if (err) {
-                res.status(400);
-                return res.send('Error retrieving file from storage.');
+    let key = req.query.jobId + '/output.zip';
+    let foundResponse = findKey(key);
+    if(foundResponse) {
+        let output = null;
+        var s3Output = s3.getObject({ Bucket: bucket, Key: key }, function(err, data) { 
+            if(err) {
+              console.log(err)
+              res.status(500);
+              res.send("Could not retrieve job from storage: "+err);
+            } else {
+              output = s3Output.Body.createReadStream();
             }
-            else if (exists) {
-                return storage
-                    .bucket('autodock-production')
-                    .file(req.query.jobId + '/output.zip')
-                    .createReadStream()
-                    .pipe(res);
-            }
-            else {
-                storage
-                .bucket('autodock-production')
-                .file(req.query.jobId + '/error.txt')
-                .exists((err, exists) => {
-                    if (err) {
-                        res.status(400);
-                        return res.send('Error retrieving file from storage.');
-                    }
-                    else if (exists) {
-                        return storage
-                            .bucket('autodock-production')
-                            .file(req.query.jobId + '/error.txt')
-                            .createReadStream()
-                            .pipe(res);
-                    }
-                    else {
-                        res.status(200);
-                        return res.send('Job still processing.');
-                    }
-                })
-            }
-        })
+        });
+        res.writeHead(200, {
+            'Content-Type': 'application/zip'
+          });
+        output.pipe(res);
+    } else {
+        const errorPath = req.query.jobId + '/error.txt'
+        let findError = findKey(errorPath);
+        if(findError) {
+            let output = null;
+            var s3Output = s3.getObject({ Bucket: bucket, Key: errorPath }, function(err, data) { 
+                if(err) {
+                console.log(err)
+                res.status(500);
+                res.send("Could not retrieve Error from storage: "+err);
+                } else {
+                output = s3Output.Body.createReadStream();
+                }
+            });
+            res.writeHead(400, {
+                'Content-Type': 'application/zip'
+            });
+            output.pipe(res);
+        } else {
+            res.status(200);
+            return res.send('Job still processing.');
+            //job still processing
+        } 
+
+    }
 });
 
+function uploadKey(key, stream) {
+    var uploadParams = {Bucket: bucket, Key: key, Body: stream};    
+    s3.upload (uploadParams, function (err, data) {
+        if (err) {
+            console.log("Error", err);
+            return false;
+        } if (data) {
+            console.log("Upload Success", data.Location);
+            return true;
+        }
+    });
+  
+}
+
 app.post('/v1/autodock', (req, res) => {
-    const storage = new Storage();
     var ligand = null;
     var macromolecule = null;
     var fields = {};
@@ -69,6 +111,8 @@ app.post('/v1/autodock', (req, res) => {
     .toString())
     .digest('hex');
     var uploadDirectory = __dirname + '/uploads/' + jobId;
+    ///opt/autodock
+    //make a directory for the jobId
     if (!fs.existsSync(uploadDirectory)) {
         fs.mkdirSync(uploadDirectory);
     }
@@ -141,23 +185,27 @@ app.post('/v1/autodock', (req, res) => {
             exec(exePath, args, {timeout: 900000}, function(error, stdout, stderr) {
                 jobUploadCallback = function (err) {
                     if (err) {
+                        //how to write the error log
                         fs.writeFile(uploadDirectoryClosure + '/error.txt', err, (fsErr) => {
                             if (fsErr) {
                                 // Should throw here but we don't have a restarter...
                             }
-                            const options = {
-                                gzip: 'true',
-                                destination: jobIdClosure + '/error.txt'
-                            };
-                            storage
-                                .bucket('autodock-production')
-                                .upload(uploadDirectoryClosure + '/error.txt', options, ()=> {
-                                    fs.remove(uploadDirectoryClosure);
-                                });
+                            
                             console.log(err);
-                        })
+                        }).on('close', function() {
+                            var uploadParams = {Bucket:bucket, Key: uploadDirectoryClosure + '/error.txt', Body: }
+                            s3.upload (uploadParams, function (err, data) {
+                                if (err) {
+                                console.log("Error", err);
+                                } if (data) {
+                                console.log("Upload Success", data.Location);
+                                }
+                            });
+  
+                        });
                     }
                     else {
+                        //remove docker.local upload directory
                         fs.remove(uploadDirectoryClosure);
                     }
                 };
@@ -173,14 +221,16 @@ app.post('/v1/autodock', (req, res) => {
                     var archive = archiver('zip', {
                         zlib: { level: 9 }
                     })
+                    //write the output zip file
                     output.on('close', function () {
-                        const options = {
-                            gzip: 'true',
-                            destination: jobIdClosure + '/output.zip'
-                        };
-                        storage
-                            .bucket('autodock-production')
-                            .upload(uploadDirectoryClosure + '/output.zip', options, jobUploadCallback);
+                        var uploadParams = {Bucket: bucket, Key: outputPath, Body: output};
+                        s3.upload (uploadParams, function (err, data) {
+                            if (err) {
+                              console.log("Error", err);
+                            } if (data) {
+                              console.log("Upload Success", data.Location);
+                            }
+                          });
                     })
                     archive.on('error', jobUploadCallback);
                     archive.pipe(output);
