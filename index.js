@@ -10,9 +10,11 @@ var path = require('path');
 
 
 var AWS = require('aws-sdk');
-AWS.config.loadFromPath('./config.json');
+//UNCOMMENT FOR LOCAL TESTING ADD config.json file with your AWS access and secret key here 
+//AWS.config.loadFromPath('./config.json');
 var s3 = new AWS.S3({apiVersion: '2006-03-01'});
-const bucket = 'autodock';
+
+const bucket = 'autodock'; //change this to the name of the s3 bucket you are using
 
 app.use(express.json())
 
@@ -27,7 +29,6 @@ function findKey(key) {
     s3.listObjectsV2(params, function(err, data) {
         if (err) return false; // an error occurred how to return an error?
         else {
-           console.log(data);
            //aws doesn't do file/folder structure it's just a list of things in the bucket
            data['Contents'].map(obj => { if(obj.Key == key) return true;
           });
@@ -81,7 +82,6 @@ app.get('/v1/autodock', (req, res) => {
         } else {
             res.status(200);
             return res.send('Job still processing.');
-            //job still processing
         } 
 
     }
@@ -180,35 +180,34 @@ app.post('/v1/autodock', (req, res) => {
             res.status(400)
             return res.send(errorMsg)
         }
+
         try {
             exePath = path.resolve(__dirname, './vina')
             exec(exePath, args, {timeout: 900000}, function(error, stdout, stderr) {
                 jobUploadCallback = function (err) {
+                    //only when error occurs
                     if (err) {
-                        //how to write the error log
-                        fs.writeFile(uploadDirectoryClosure + '/error.txt', err, (fsErr) => {
-                            if (fsErr) {
-                                // Should throw here but we don't have a restarter...
-                            }
-                            
-                            console.log(err);
-                        }).on('close', function() {
-                            var uploadParams = {Bucket:bucket, Key: uploadDirectoryClosure + '/error.txt', Body: 'Error Running Autodock'}
-                            s3.upload (uploadParams, function (err, data) {
-                                if (err) {
-                                console.log("Error", err);
-                                } if (data) {
-                                console.log("Upload Success", data.Location);
+                        let errorWriteStream = fs.createWriteStream(uploadDirectoryClosure + '/error.txt');
+                        errorWriteStream.on('close', ()  => {
+                            let readStream = fs.createReadStream(uploadDirectoryClosure+ '/error.txt');
+                            var uploadParams = {Bucket: bucket, Key: uploadDirectoryClosure + '/error.txt', Body: readStream};
+                            s3.upload(uploadParams, function(err, data) {
+                                if(err) {
+                                    res.status(400);
+                                    return res.send('Error on Docking and could not upload Error' + err);
+                                } else {
+                                    fs.remove(uploadDirectoryClosure);
                                 }
                             });
-  
                         });
                     }
                     else {
+                        //on success of the execute
                         //remove docker.local upload directory
                         fs.remove(uploadDirectoryClosure);
                     }
                 };
+
                 if (stderr) {
                     jobUploadCallback(stderr);
                 }
@@ -216,6 +215,7 @@ app.post('/v1/autodock', (req, res) => {
                     jobUploadCallback(error.toString());
                 }
                 else {
+                    //success of the docking
                     var outputPath = uploadDirectoryClosure + '/output.zip';
                     var output = fs.createWriteStream(outputPath);
                     var archive = archiver('zip', {
@@ -223,7 +223,8 @@ app.post('/v1/autodock', (req, res) => {
                     })
                     //write the output zip file
                     output.on('close', function () {
-                        var uploadParams = {Bucket: bucket, Key: outputPath, Body: output};
+                        let readStream = fs.createReadStream(outputPath);
+                        var uploadParams = {Bucket: bucket, Key: outputPath, Body: readStream};
                         s3.upload (uploadParams, function (err, data) {
                             if (err) {
                               console.log("Error", err);
@@ -239,6 +240,7 @@ app.post('/v1/autodock', (req, res) => {
                     var log = uploadDirectoryClosure + '/log.txt';
                     archive.append(fs.createReadStream(log), { name: 'log.txt' });
                     archive.finalize();
+
                 }});
                 var response = {
                     'jobId': jobId,

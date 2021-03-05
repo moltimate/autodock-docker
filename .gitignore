@@ -2,3 +2,4 @@ node_modules/*
 uploads/*
 package-lock.json
 package-lock.json
+config.json
