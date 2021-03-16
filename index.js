@@ -10,96 +10,124 @@ var path = require('path');
 
 
 var AWS = require('aws-sdk');
-//UNCOMMENT FOR LOCAL TESTING ADD config.json file with your AWS access and secret key here 
+//UNCOMMENT FOR LOCAL Development/testing ADD config.json file with your AWS access and secret key here 
 //AWS.config.loadFromPath('./config.json');
 var s3 = new AWS.S3({apiVersion: '2006-03-01'});
 
 const bucket = 'autodock'; //change this to the name of the s3 bucket you are using
-
+var lookedForOutput = false;
+var lookedForError = false;
 app.use(express.json())
 
 const REQUIRED_FIELDS = ["center_x","center_y","center_z","size_x","size_y","size_z"];
 const OPTIONAL_FIELDS = ["cpu", "seed", "exhaustiveness", "num_modes", "energy_range"];
 
-function findKey(key) {
+const findKey = function(key, callback) {
+    //console.log('Find Key');
     var params = {
-        Bucket: bucket, 
-        MaxKeys: 10
-       };
+    Bucket: bucket, 
+    MaxKeys: 50
+    };
     s3.listObjectsV2(params, function(err, data) {
-        if (err) return false; // an error occurred how to return an error?
+        if (err) {
+            console.log('Error in Find Key', err);
+            return callback(err, null); // an error occurred how to return an error?
+        }
         else {
-           //aws doesn't do file/folder structure it's just a list of things in the bucket
-           data['Contents'].map(obj => { if(obj.Key == key) return true;
-          });
-          return false
+            
+            var found = false;
+        //aws doesn't do file/folder structure it's just a list of things in the bucket
+            data['Contents'].map(obj => { 
+                if(obj.Key == key) { 
+                    console.log(obj.Key, key, 'Key matches and is found');
+                    found = true;
+                    return callback(null, true);
+                }
+         });
+         if(found == false) {
+            console.log('Key doesnt match anything');
+            return callback(null, null); //file doesn't exist
+         } else{ 
+             return;
          }
-      });
-
-}
+        }
+    });
+};
 
 app.get('/v1/autodock', (req, res) => {
-
+    //console.log('Get Data');
+    console.log(req.query.jobId);
     if (!req.query.jobId) {
+        console.log('Missing parameter of the jobId');
         res.status(400);
         return res.send('Missing required parameter: jobId');
     }
-    let key = req.query.jobId + '/output.zip';
-    let foundResponse = findKey(key);
-    if(foundResponse) {
-        let output = null;
-        var s3Output = s3.getObject({ Bucket: bucket, Key: key }, function(err, data) { 
-            if(err) {
-              console.log(err)
-              res.status(500);
-              res.send("Could not retrieve job from storage: "+err);
-            } else {
-              output = s3Output.Body.createReadStream();
-            }
-        });
-        res.writeHead(200, {
-            'Content-Type': 'application/zip'
-          });
-        output.pipe(res);
-    } else {
-        const errorPath = req.query.jobId + '/error.txt'
-        let findError = findKey(errorPath);
-        if(findError) {
-            let output = null;
-            var s3Output = s3.getObject({ Bucket: bucket, Key: errorPath }, function(err, data) { 
-                if(err) {
-                console.log(err)
-                res.status(500);
-                res.send("Could not retrieve Error from storage: "+err);
+    let key = '/opt/autodock/uploads/' + req.query.jobId + '/output.zip';
+    console.log('Key', key);
+    findKey(key, (err, data) => {
+        if(err != null) {
+            //error trying to find the job
+            console.log('Find Key Exists Errored: ', err);
+            res.status(500);
+            return res.send(err);
+        } else if((err == null && data == null) && lookedForError == false && lookedForOutput == false) {
+            lookedForError = true;
+            console.log('Looking for Error file');
+            //file not found, look for error file, if can't find error, return job still processing
+            const errorPath = '/opt/autodock/uploads/'+ req.query.jobId + '/error.txt'
+            findKey(errorPath, (err, exists) => {
+                if(exists) {
+                    console.log('error file exists');
+                    let output = null;
+                    var s3Output = s3.getObject({ Bucket: bucket, Key: errorPath }, function(err, data) { 
+                        if(err) {
+                            console.log(err)
+                            res.status(500);
+                            res.send("Could not retrieve Error from storage: "+err);
+                        } 
+                    }).createReadStream();
+                    res.writeHead(400, {
+                        'Content-Type': 'application/zip'
+                    });
+                    s3Output.pipe(res);
+                    return;
+                } else if(err) {
+                    console.log(err);
+                    res.status(500);
+                    return res.send("Could not retrieve Error Message from Storage. See the S3 Bucket for details");
                 } else {
-                output = s3Output.Body.createReadStream();
+                    res.status(200);
+                    return res.send('Job still processing.');
                 }
             });
-            res.writeHead(400, {
-                'Content-Type': 'application/zip'
-            });
-            output.pipe(res);
-        } else {
-            res.status(200);
-            return res.send('Job still processing.');
-        } 
-
-    }
-});
-
-function uploadKey(key, stream) {
-    var uploadParams = {Bucket: bucket, Key: key, Body: stream};    
-    s3.upload (uploadParams, function (err, data) {
-        if (err) {
-            console.log("Error", err);
-            return false;
-        } if (data) {
-            console.log("Upload Success", data.Location);
-            return true;
+        } else if(lookedForOutput == false) { 
+            console.log('Found the response');
+            lookedForOutput = true;
+            try{
+                //trying to read the job
+                let output=null;
+                output = s3.getObject({ Bucket: bucket, Key: key }).createReadStream().on('error', err => {
+                    console.log(err);
+                    res.status(500);
+                    return res.send("Could not retrieve job from storage: " + err);
+                });
+                //console.log(res);
+                //return success code 200, with a zip file of the response from the storage  
+                res.writeHead(200, {
+                  'Content-Type': 'application/zip'
+                });
+                output.pipe(res);
+                return;
+              } catch(err) {
+                console.log('Error retriving job', err);
+                res.status(500);
+                return res.send("Could not retrieve job from storage: "+err);
+              }
+            //found response, get response
         }
     });
-  
-}
+});
+
 
 app.post('/v1/autodock', (req, res) => {
     var ligand = null;
@@ -187,7 +215,10 @@ app.post('/v1/autodock', (req, res) => {
                 jobUploadCallback = function (err) {
                     //only when error occurs
                     if (err) {
+                        console.log(err);
                         let errorWriteStream = fs.createWriteStream(uploadDirectoryClosure + '/error.txt');
+                        errorWriteStream.write(err);
+                        errorWriteStream.close();
                         errorWriteStream.on('close', ()  => {
                             let readStream = fs.createReadStream(uploadDirectoryClosure+ '/error.txt');
                             var uploadParams = {Bucket: bucket, Key: uploadDirectoryClosure + '/error.txt', Body: readStream};
