@@ -11,7 +11,7 @@ var path = require('path');
 
 var AWS = require('aws-sdk');
 //UNCOMMENT FOR LOCAL Development/testing ADD config.json file with your AWS access and secret key here 
-//AWS.config.loadFromPath('./config.json');
+AWS.config.loadFromPath('./config.json');
 var s3 = new AWS.S3({apiVersion: '2006-03-01'});
 
 const bucket = 'autodock'; //change this to the name of the s3 bucket you are using
@@ -26,7 +26,7 @@ const findKey = function(key, callback) {
     //console.log('Find Key');
     var params = {
     Bucket: bucket, 
-    MaxKeys: 50
+    MaxKeys: 100
     };
     s3.listObjectsV2(params, function(err, data) {
         if (err) {
@@ -55,11 +55,13 @@ const findKey = function(key, callback) {
 };
 
 app.get('/v1/autodock', (req, res) => {
+    let responseSent = false;
     //console.log('Get Data');
     console.log(req.query.jobId);
     if (!req.query.jobId) {
         console.log('Missing parameter of the jobId');
         res.status(400);
+        responseSent = true;
         return res.send('Missing required parameter: jobId');
     }
     let key = '/opt/autodock/uploads/' + req.query.jobId + '/output.zip';
@@ -68,36 +70,48 @@ app.get('/v1/autodock', (req, res) => {
         if(err != null) {
             //error trying to find the job
             console.log('Find Key Exists Errored: ', err);
-            res.status(500);
-            return res.send(err);
-        } else if((err == null && data == null) && lookedForError == false && lookedForOutput == false) {
-            lookedForError = true;
+            if(!responseSent) {
+                res.status(500);
+                return res.send(err);
+            } else {
+                return;
+            }
+        } else if(err == null && data == null) {
+            //lookedForError = true;
             console.log('Looking for Error file');
             //file not found, look for error file, if can't find error, return job still processing
             const errorPath = '/opt/autodock/uploads/'+ req.query.jobId + '/error.txt'
             findKey(errorPath, (err, exists) => {
-                if(exists) {
+                if(exists && !responseSent) {
                     console.log('error file exists');
                     let output = null;
                     var s3Output = s3.getObject({ Bucket: bucket, Key: errorPath }, function(err, data) { 
                         if(err) {
-                            console.log(err)
-                            res.status(500);
-                            res.send("Could not retrieve Error from storage: "+err);
+                            console.log(err);
+                            if(!responseSent) {
+                                res.status(500);
+                                res.send("Could not retrieve Error from storage: "+err);
+                            }
                         } 
                     }).createReadStream();
                     res.writeHead(400, {
                         'Content-Type': 'application/zip'
                     });
                     s3Output.pipe(res);
-                    return;
+                    responseSent = true;
                 } else if(err) {
-                    console.log(err);
-                    res.status(500);
-                    return res.send("Could not retrieve Error Message from Storage. See the S3 Bucket for details");
+                    if(!responseSent) {
+                        console.log(err);
+                        res.status(500);
+                        responseSent = true;
+                        return res.send("Could not retrieve Error Message from Storage. See the S3 Bucket for details");
+                    }
                 } else {
-                    res.status(200);
-                    return res.send('Job still processing.');
+                    if(!responseSent) {
+                        res.status(200);
+                        responseSent = true;
+                        return res.send('Job still processing.');
+                    }
                 }
             });
         } else if(lookedForOutput == false) { 
@@ -108,8 +122,13 @@ app.get('/v1/autodock', (req, res) => {
                 let output=null;
                 output = s3.getObject({ Bucket: bucket, Key: key }).createReadStream().on('error', err => {
                     console.log(err);
-                    res.status(500);
-                    return res.send("Could not retrieve job from storage: " + err);
+                    if(!responseSent) {
+                        res.status(500);
+                        responseSent =true;
+                        return res.send("Could not retrieve job from storage: " + err);
+                    } else {
+                        return;
+                    }
                 });
                 //console.log(res);
                 //return success code 200, with a zip file of the response from the storage  
@@ -117,13 +136,16 @@ app.get('/v1/autodock', (req, res) => {
                   'Content-Type': 'application/zip'
                 });
                 output.pipe(res);
+                responseSent = true;
                 return;
               } catch(err) {
                 console.log('Error retriving job', err);
-                res.status(500);
-                return res.send("Could not retrieve job from storage: "+err);
+                    if(!responseSent) {
+                        res.status(500);
+                        return res.send("Could not retrieve job from storage: "+err);
+                    }
               }
-            //found response, get response
+            
         }
     });
 });
@@ -139,6 +161,7 @@ app.post('/v1/autodock', (req, res) => {
     .toString())
     .digest('hex');
     var uploadDirectory = __dirname + '/uploads/' + jobId;
+    let responseSent = false;
     ///opt/autodock
     //make a directory for the jobId
     if (!fs.existsSync(uploadDirectory)) {
@@ -210,7 +233,8 @@ app.post('/v1/autodock', (req, res) => {
         }
 
         try {
-            exePath = path.resolve(__dirname, './vina')
+            exePath = path.resolve(__dirname, './vina');
+            console.log('Running VinaLC');
             exec(exePath, args, {timeout: 900000}, function(error, stdout, stderr) {
                 jobUploadCallback = function (err) {
                     //only when error occurs
@@ -227,17 +251,20 @@ app.post('/v1/autodock', (req, res) => {
                                     res.status(400);
                                     return res.send('Error on Docking and could not upload Error' + err);
                                 } else {
+                                    console.log('Success uploading error')
                                     fs.remove(uploadDirectoryClosure);
                                 }
                             });
                         });
                     }
                     else {
+                        console.log('Successful docking, removing directory')
                         //on success of the execute
                         //remove docker.local upload directory
                         fs.remove(uploadDirectoryClosure);
                     }
                 };
+                console.log('after the vinalc call');
 
                 if (stderr) {
                     jobUploadCallback(stderr);
@@ -247,6 +274,7 @@ app.post('/v1/autodock', (req, res) => {
                 }
                 else {
                     //success of the docking
+                    console.log('Successful docking, uploading to zip');
                     var outputPath = uploadDirectoryClosure + '/output.zip';
                     var output = fs.createWriteStream(outputPath);
                     var archive = archiver('zip', {
