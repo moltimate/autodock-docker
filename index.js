@@ -11,7 +11,7 @@ var path = require('path');
 
 var AWS = require('aws-sdk');
 //UNCOMMENT FOR LOCAL Development/testing ADD config.json file with your AWS access and secret key here 
-AWS.config.loadFromPath('./config.json');
+//AWS.config.loadFromPath('./config.json');
 var s3 = new AWS.S3({apiVersion: '2006-03-01'});
 
 const bucket = 'autodock'; //change this to the name of the s3 bucket you are using
