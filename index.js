@@ -15,8 +15,7 @@ var AWS = require('aws-sdk');
 var s3 = new AWS.S3({apiVersion: '2006-03-01'});
 
 const bucket = 'autodock'; //change this to the name of the s3 bucket you are using
-var lookedForOutput = false;
-var lookedForError = false;
+
 app.use(express.json())
 
 const REQUIRED_FIELDS = ["center_x","center_y","center_z","size_x","size_y","size_z"];
@@ -43,13 +42,13 @@ const findKey = function(key, callback) {
                     found = true;
                     return callback(null, true);
                 }
-         });
-         if(found == false) {
-            console.log('Key doesnt match anything');
-            return callback(null, null); //file doesn't exist
-         } else{ 
-             return;
-         }
+            });
+            if(found == false) {
+                console.log('Key doesnt match anything');
+                return callback(null, null); //file doesn't exist
+            } else{ 
+                 return;
+            }
         }
     });
 };
@@ -67,6 +66,7 @@ app.get('/v1/autodock', (req, res) => {
     let key = '/opt/autodock/uploads/' + req.query.jobId + '/output.zip';
     console.log('Key', key);
     findKey(key, (err, data) => {
+        console.log("Callback", err, data);
         if(err != null) {
             //error trying to find the job
             console.log('Find Key Exists Errored: ', err);
@@ -114,9 +114,8 @@ app.get('/v1/autodock', (req, res) => {
                     }
                 }
             });
-        } else if(lookedForOutput == false) { 
+        } else { 
             console.log('Found the response');
-            lookedForOutput = true;
             try{
                 //trying to read the job
                 let output=null;
@@ -135,9 +134,8 @@ app.get('/v1/autodock', (req, res) => {
                 res.writeHead(200, {
                   'Content-Type': 'application/zip'
                 });
-                output.pipe(res);
                 responseSent = true;
-                return;
+                output.pipe(res);
               } catch(err) {
                 console.log('Error retriving job', err);
                     if(!responseSent) {
