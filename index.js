@@ -24,8 +24,7 @@ const OPTIONAL_FIELDS = ["cpu", "seed", "exhaustiveness", "num_modes", "energy_r
 const findKey = function(key, callback) {
     //console.log('Find Key');
     var params = {
-    Bucket: bucket, 
-    MaxKeys: 100
+    Bucket: bucket
     };
     s3.listObjectsV2(params, function(err, data) {
         if (err) {
