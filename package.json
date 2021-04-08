@@ -19,7 +19,7 @@
   },
   "homepage": "https://github.com/moltimate/autodock-docker#readme",
   "dependencies": {
-    "@google-cloud/storage": "^4.3.1",
+    "aws-sdk": "^2.850.0",
     "archiver": "^3.1.1",
     "express": "^4.17.1",
     "formidable": "^1.2.1",
