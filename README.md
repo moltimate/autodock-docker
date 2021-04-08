@@ -1,6 +1,7 @@
 # autodock-docker
 The components necessary to build a docker container running an instance of 
-autodock vina with its own HTTP API.
+autodock vina with its own HTTP API. You must have access to an AWS s3 Bucket
+to successfully run. (This includes your own access key and secret access key)
 
 ### Contents
 
@@ -13,8 +14,15 @@ autodock vina with its own HTTP API.
 ### Setup & Run
 
 #### Docker Desktop
-
-First, obtain key files for a service account on Google Cloud. Your service account will need permissions for container registry, kubernetes/compute engine and cloud storage - see https://cloud.google.com/run/docs/testing/local
+Setting up to use AWS s3 functionality:
+1. Obtain your access key and secret access key from your AWS organization.
+2. Create a "config.json" file in the top level of this directory to contain your access key and secret access key.
+    This is a json formatted file for example:
+    { "accessKeyId":"[ACCESS KEY]", "secretAccessKey": "[SECRET ACCESS KEY]", "region": "[AWS REGION]" }
+2. On your AWS account make sure you have access to your S3 bucket
+3. In the index.js file, uncomment AWS.config.loadFromPath('./config.json');  towards the top of the file
+4. Set the variable bucket = "<<Your s3 Bucket Name>>"
+5. Create and Run Docker Image following steps below.
 
 Next, build a docker image from the root directory of the autodock-docker
 source code.
@@ -26,7 +34,7 @@ source code.
 After the image has been generated, create a container. This container should
 have port 8000 exposed.
 
-   ```docker container run --publish 8000:8000 --detach  --name [NAME OF YOUR IMAGE] -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/keys/[NAME OF YOUR KEY FILE] -v [DIRECTORY WHERE YOUR KEY FILES ARE STORED]:/tmp/keys:ro autodock:1.8```
+   ```docker container run --publish [PORT ON MACHINE TO EXPOSE]:8000 --detach  --name [NAME OF YOUR IMAGE]```
     
 Users can now interact with the instance of Autodock in the docker container. The following output should appear:
 
@@ -37,6 +45,8 @@ Users can now interact with the instance of Autodock in the docker container. Th
     Listening on port 8000.
     ```
     
+When Deploying to AWS ECS Instance:
+   Remove references to "config.json" file
 
 <a name="api-summary"></a>
 ### API Summary
