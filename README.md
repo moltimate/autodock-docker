@@ -18,7 +18,7 @@ Setting up to use AWS s3 functionality:
 1. Obtain your access key and secret access key from your AWS organization.
 2. Create a "config.json" file in the top level of this directory to contain your access key and secret access key.
     This is a json formatted file for example:
-    { "accessKeyId":"[ACCESS KEY]", "secretAccessKey": "[SECRET ACCESS KEY]", "region": "[AWS REGION]" }
+   ```{ "accessKeyId":"[ACCESS KEY]", "secretAccessKey": "[SECRET ACCESS KEY]", "region": "[AWS REGION]" }```
 2. On your AWS account make sure you have access to your S3 bucket
 3. In the index.js file, uncomment AWS.config.loadFromPath('./config.json');  towards the top of the file
 4. Set the variable bucket = "<<Your s3 Bucket Name>>"
